@@ -118,8 +118,14 @@ struct box_t {
     { CHECKBOXITEMS, NULL, 0xFF }
 };
 
+//#define FS_OUTCTRL 0xa636a53d
+#define FS_OUTCTRL 0x7636a53d
 //--
+
+
+
 typedef struct fs_output_t {
+
     // gps
     double latitude;
     double longitude;
@@ -141,9 +147,11 @@ typedef struct fs_output_t {
     double rateYaw;
 
     // CTRL
-#define FS_OUTCTRL 0xa636a53d
-    uint32_t ctrl;
+    uint32_t ctrl_h;
+    uint32_t ctrl_l;
 } fs_output_t;
+
+#define FS_OUTPUT_T_SIZE 112
 
 typedef struct fs_input_t {
     double aileron;
@@ -174,9 +182,12 @@ mavlink_state_t *mavlinkState;                      // mavlink ground station
 mwi_mav_t *mwiState;                                // mwi state
 mavlink_message_t msg;                              // mavlink message
 
+fs_output_t fsMsg;
+
+#define xlen 112
 HANDLE serialLink = 0;
 msp_payload_t *payload;
-fs_output_t fsMsg;
+
 
 uint8_t buf[BUFFER_LENGTH];                         // udp buffer
 SOCKET sock;                                        // udp socket
@@ -478,20 +489,25 @@ void recieveFromGS(void)
 }
 
 void recieveFromFS()
-{
+{ //receive data from FlightGear
+	socklen_t fromlen;
 
-    int recsize = recvfrom(sockFSin, (char*)&fsMsg, sizeof(fsMsg), 0, NULL, NULL);
+	int recsize = recvfrom(sockFSin, (void *)&fsMsg, sizeof fsMsg, 0,(SOCKADDR *)&locFSAddr, SOCKLEN_T_INT(&fromlen));
+
     if (recsize > 0) {
-        MW_TRACE("\n")MW_TRACE(" <-- udp in FS <--\n")
-        swap32(&fsMsg.ctrl);
-        if (fsMsg.ctrl != FS_OUTCTRL) {
-            if (mavlinkState->verbose) {
-                printf("%d\n", fsMsg.ctrl);
-            }
-            MW_TRACE(" <-- udp in FS Checksum Failed <--\n")
-        } else {
 
-            /* endian-swap message fields */
+    	uint32_t magic=FS_OUTCTRL;
+    	uint32_t magic_swaped=magic;
+    	swap32(&magic_swaped);
+    	  if ((fsMsg.ctrl_h != magic) && (fsMsg.ctrl_l != magic) && (fsMsg.ctrl_h != magic_swaped) && (fsMsg.ctrl_l != magic_swaped)){
+
+    		              	printf("FlightGear magic-code protocol error \n");
+    		              	printf("%Xh\n",  fsMsg.ctrl_h,fsMsg.ctrl_l);
+    		              	return;
+    		              }
+
+
+			/* endian-swap message fields */
             swap64(&fsMsg.latitude);
             swap64(&fsMsg.longitude);
             swap64(&fsMsg.altitude);
@@ -513,6 +529,7 @@ void recieveFromFS()
                 fsMsg.altitude = 0;
             }
 
+
             payload->length = 0;
             MWIserialbuffer_Payloadwrite16(payload, FLOAT_TO_INT(fsMsg.roll * 10.0f));
             MWIserialbuffer_Payloadwrite16(payload, FLOAT_TO_INT(-fsMsg.pitch * 10.0f));
@@ -530,11 +547,19 @@ void recieveFromFS()
 
             MWIserialbuffer_askForFrame(serialLink, MSP_SET_RAW_GPS, payload);
 
-        }
-    } else {
-        // MW_TRACE("\n")MW_TRACE(" <-- nothing to read from udp sockFSin :(  <--\n")
+            if (mavlinkState->verbose) {
+                       printf("<----------------FlightGear frame received------------> \n");
+                       printf("Roll        :%d\n", FLOAT_TO_INT(fsMsg.roll * 10.0f));
+                       printf("Pitch       :%d\n", FLOAT_TO_INT(-fsMsg.pitch * 10.0f));
+                       printf("Heading     :%d\n", FLOAT_TO_INT(fsMsg.heading));
+                       printf("Altitude    :%d\n", FLOAT_TO_INT(fsMsg.altitude * 304.8f));
+                       printf("latitude    :%d\n", fsMsg.latitude );
+                       printf("longitude   :%d\n", fsMsg.longitude );
+                       printf("groundspeed :%d\n", fsMsg.groundspeed);
+           }
     }
 }
+
 void sendToFS(mwi_mav_t *mwi)
 {
     fs_input_t cdata;
