@@ -14,7 +14,10 @@
  You should have received a copy of the GNU General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  ****************************************************************************/
-typedef enum {
+
+/*
+ *
+ typedef enum {
     FC_BASEFLIGHT =0,
     FC_MWI8BIT ,
 } fcType;
@@ -46,18 +49,20 @@ typedef struct {
     int mwiFlightMode;          // the reported mavlink flight mode
     int mwiAirFrametype;        // the reported mavlink airframe mode
 } mavlink_state_t;
+*/
+
+//#include <stdio.h>
+//#include <stdint.h>
+//#include "../utils/utils.h"
 
 
-#include <stdio.h>
-#include <stdint.h>
-#include "../utils/utils.h"
 
-
-
-#define TYPE_PX4 -1
+//#define TYPE_PX4 -1
 
 void eexit(HANDLE code);
-void rtfmHelp(void);
-void rtfmVersion(const char * version);
-int config(mavlink_state_t *mavlinkState,int argc, char* argv[]);
+//void rtfmHelp(void);
+//void rtfmVersion(const char * version);
+//int config(mavlink_state_t *mavlinkState,int argc, char* argv[]);
+
+
 

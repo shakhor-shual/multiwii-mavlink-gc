@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "../serial/serial.h"
+#include "../mwgc/conf.h"
 #include "mwi.h"
 
 #define MASK  0xff

@@ -1,4 +1,5 @@
-#include "mwgc.h"
+//#include "mwgc.h"
+#include "conf.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -93,7 +94,7 @@ int config(mavlink_state_t *mavlinkState, int argc, char* argv[])
                     }
                     i++;
                 } else if (strcmp(argv[i], "-v") == 0) {
-                    mavlinkState->verbose = atoi(argv[i + 1]);
+                    mavlinkState->verbose = (uint8_t) atoi(argv[i + 1]);
                     i++;
                 } else if (strcmp(argv[i], "-hil") == 0) {
                     mavlinkState->hil = atoi(argv[i + 1]);
@@ -118,4 +119,9 @@ int config(mavlink_state_t *mavlinkState, int argc, char* argv[])
         printf("uav id: %i\n", mavlinkState->mwiUavID);
     }
     return OK;
+}
+
+void tracer(uint8_t mask, const char *msg) {
+	//if (mavlinkState->verbose && mask ) printf((const char*) msg);
+
 }

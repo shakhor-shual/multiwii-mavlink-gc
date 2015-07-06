@@ -62,6 +62,7 @@ typedef int SOCKET;
 #include "../utils/utils.h"
 #include "../mwi/mwi.h"
 
+#include "conf.h"
 // this header
 #include "mwgc.h"
 
@@ -122,8 +123,6 @@ struct box_t {
 #define FS_OUTCTRL 0x7636a53d
 //--
 
-
-
 typedef struct fs_output_t {
 
     // gps
@@ -178,7 +177,7 @@ void recieveFromFS(void);
 void recieveFromGS(void);
 void annex(void);
 
-mavlink_state_t *mavlinkState;                      // mavlink ground station
+mavlink_state_t *systemState;                      // mavlink ground station
 mwi_mav_t *mwiState;                                // mwi state
 mavlink_message_t msg;                              // mavlink message
 
@@ -241,16 +240,16 @@ int main(int argc, char* argv[])
     mwiState->callback = &callBack_mwi;
 
     // mavlink state
-    mavlinkState = calloc(sizeof(*mavlinkState), sizeof(*mavlinkState));
-    mavlinkState->mwiUavID = 1;
-    mavlinkState->mwiAutoPilotType = MAV_AUTOPILOT_GENERIC;
-    mavlinkState->mwiFlightMode = MAV_STATE_UNINIT; // initial mode is unknown
-    mavlinkState->mwiAirFrametype = MAV_TYPE_GENERIC;
-    mavlinkState->autoTelemtry = NOK;
-    mavlinkState->baudrate = SERIAL_115200_BAUDRATE;
-    mavlinkState->hertz = 30;
-    strcpy(mavlinkState->targetIp, "127.0.0.1");
-    strcpy(mavlinkState->serialDevice, "/dev/ttyO2");
+    systemState = calloc(sizeof(*systemState), sizeof(*systemState));
+    systemState->mwiUavID = 1;
+    systemState->mwiAutoPilotType = MAV_AUTOPILOT_GENERIC;
+    systemState->mwiFlightMode = MAV_STATE_UNINIT; // initial mode is unknown
+    systemState->mwiAirFrametype = MAV_TYPE_GENERIC;
+    systemState->autoTelemtry = NOK;
+    systemState->baudrate = SERIAL_115200_BAUDRATE;
+    systemState->hertz = 30;
+    strcpy(systemState->targetIp, "127.0.0.1");
+    strcpy(systemState->serialDevice, "/dev/ttyO2");
 
     // some counters
     uint64_t lastFrameRequest = 0;
@@ -259,12 +258,12 @@ int main(int argc, char* argv[])
     uint64_t currentTime = microsSinceEpoch();
 
     // create a configuration from command line
-    if (config(mavlinkState, argc, argv) == NOK) {
+    if (config(systemState, argc, argv) == NOK) {
         eexit(serialLink);
     }
     // translate argument to something mavlink knows about
-    if (mavlinkState->mwiAutoPilotType == TYPE_PX4) {
-        mavlinkState->mwiAutoPilotType = MAV_AUTOPILOT_PX4;
+    if (systemState->mwiAutoPilotType == TYPE_PX4) {
+        systemState->mwiAutoPilotType = MAV_AUTOPILOT_PX4;
     }
 
     // create our socket
@@ -279,7 +278,7 @@ int main(int argc, char* argv[])
 
     memset(&locGSAddr, 0, sizeof(locGSAddr));
     locGSAddr.sin_family = AF_INET;
-    locGSAddr.sin_addr.s_addr = inet_addr(mavlinkState->targetIp);
+    locGSAddr.sin_addr.s_addr = inet_addr(systemState->targetIp);
     locGSAddr.sin_port = htons(14550); // TODO port number option
 
     // Bind the socket to port 14551 - necessary to receive packets from qgroundcontrol
@@ -368,7 +367,7 @@ int main(int argc, char* argv[])
     // end socket
 #endif
     // init serial
-    serialLink = MWIserialbuffer_init(mavlinkState->serialDevice, mavlinkState->baudrate);
+    serialLink = MWIserialbuffer_init(systemState->serialDevice, systemState->baudrate);
     if (serialLink == NOK) {
         perror("error opening serial port");
         eexit(serialLink);
@@ -379,7 +378,7 @@ int main(int argc, char* argv[])
 
         currentTime = microsSinceEpoch();
 
-        if (!mavlinkState->autoTelemtry && ((currentTime - lastFrameRequest) > (1000 * (1000 / (uint32_t)(mavlinkState->hertz))))) {
+        if (!systemState->autoTelemtry && ((currentTime - lastFrameRequest) > (1000 * (1000 / (uint32_t)(systemState->hertz))))) {
             lastFrameRequest = currentTime;
             if (mwiState->init == OK) {
                 if ((currentTime - lastHeartBeat) > 1000 * 500) {
@@ -415,18 +414,18 @@ int main(int argc, char* argv[])
             //MSP_BAT
 
             // the ground station is sending rc data
-            if (mavlinkState->rcdata.toSend == OK) {
-                mavlinkState->rcdata.toSend = NOK;
+            if (systemState->rcdata.toSend == OK) {
+                systemState->rcdata.toSend = NOK;
                 payload->length = 0;
-                MWIserialbuffer_Payloadwrite16(payload, mavlinkState->rcdata.y);
-                MWIserialbuffer_Payloadwrite16(payload, mavlinkState->rcdata.x);
-                if (mavlinkState->fcType == FC_MWI8BIT) {
-                    MWIserialbuffer_Payloadwrite16(payload, mavlinkState->rcdata.r);
-                    MWIserialbuffer_Payloadwrite16(payload, mavlinkState->rcdata.z);
+                MWIserialbuffer_Payloadwrite16(payload, systemState->rcdata.y);
+                MWIserialbuffer_Payloadwrite16(payload, systemState->rcdata.x);
+                if (systemState->fcType == FC_MWI8BIT) {
+                    MWIserialbuffer_Payloadwrite16(payload, systemState->rcdata.r);
+                    MWIserialbuffer_Payloadwrite16(payload, systemState->rcdata.z);
                 } else {
 
-                    MWIserialbuffer_Payloadwrite16(payload, mavlinkState->rcdata.z);
-                    MWIserialbuffer_Payloadwrite16(payload, mavlinkState->rcdata.r);
+                    MWIserialbuffer_Payloadwrite16(payload, systemState->rcdata.z);
+                    MWIserialbuffer_Payloadwrite16(payload, systemState->rcdata.r);
                 }
                 MWIserialbuffer_Payloadwrite16(payload, 1500);
                 MWIserialbuffer_Payloadwrite16(payload, 1500);
@@ -455,7 +454,7 @@ void annex(void)
 //  recieve udp from groundstation
     recieveFromGS();
 
-    if (mavlinkState->hil) {
+    if (systemState->hil) {
         //  recieve udp from flight simulator
         recieveFromFS();
 
@@ -479,7 +478,7 @@ void recieveFromGS(void)
         for (int i = 0; i < recsize; ++i) {
             if (mavlink_parse_char(MAVLINK_COMM_0, udpInBuf[i], &msgIn, &status)) {
                 // Packet received
-                if (mavlinkState->verbose) {
+                if (systemState->verbose) {
                     printf("\nReceived packet: SYS: %d, COMP: %d, LEN: %d, MSG ID: %d\n", msgIn.sysid, msgIn.compid, msgIn.len, msgIn.msgid);
                 }
                 handleMessage(&msgIn);
@@ -547,7 +546,7 @@ void recieveFromFS()
 
             MWIserialbuffer_askForFrame(serialLink, MSP_SET_RAW_GPS, payload);
 
-            if (mavlinkState->verbose) {
+            if (systemState->verbose) {
                        printf("<----------------FlightGear frame received------------> \n");
                        printf("Roll        :%d\n", FLOAT_TO_INT(fsMsg.roll * 10.0f));
                        printf("Pitch       :%d\n", FLOAT_TO_INT(-fsMsg.pitch * 10.0f));
@@ -563,7 +562,7 @@ void recieveFromFS()
 void sendToFS(mwi_mav_t *mwi)
 {
     fs_input_t cdata;
-    if (mavlinkState->fcType == FC_MWI8BIT) {
+    if (systemState->fcType == FC_MWI8BIT) {
         // PLANE default
        cdata.aileron = (double)(-(mwi->servo[4] - 1500) / 500.0f);
         cdata.elevator = (double)((mwi->servo[6] - 1500) / 500.0f);
@@ -617,37 +616,37 @@ void callBack_mwi(int state)
 
             switch (mwiState->multiType) {
                 case 1:
-                    mavlinkState->mwiAirFrametype = MAV_TYPE_TRICOPTER;
+                    systemState->mwiAirFrametype = MAV_TYPE_TRICOPTER;
                     break;
                 case 2:
-                    mavlinkState->mwiAirFrametype = MAV_TYPE_QUADROTOR;
+                    systemState->mwiAirFrametype = MAV_TYPE_QUADROTOR;
                     break;
                 case 3:
-                    mavlinkState->mwiAirFrametype = MAV_TYPE_QUADROTOR;
+                    systemState->mwiAirFrametype = MAV_TYPE_QUADROTOR;
                     break;
                 case 7:
-                    mavlinkState->mwiAirFrametype = MAV_TYPE_HEXAROTOR;
+                    systemState->mwiAirFrametype = MAV_TYPE_HEXAROTOR;
                     break;
                 case 10:
-                    mavlinkState->mwiAirFrametype = MAV_TYPE_HEXAROTOR;
+                    systemState->mwiAirFrametype = MAV_TYPE_HEXAROTOR;
                     break;
                 case 11:
-                    mavlinkState->mwiAirFrametype = MAV_TYPE_OCTOROTOR;
+                    systemState->mwiAirFrametype = MAV_TYPE_OCTOROTOR;
                     break;
                 case 12:
-                    mavlinkState->mwiAirFrametype = MAV_TYPE_OCTOROTOR;
+                    systemState->mwiAirFrametype = MAV_TYPE_OCTOROTOR;
                     break;
                 case 13:
-                    mavlinkState->mwiAirFrametype = MAV_TYPE_OCTOROTOR;
+                    systemState->mwiAirFrametype = MAV_TYPE_OCTOROTOR;
                     break;
                 case 14:
-                    mavlinkState->mwiAirFrametype = MAV_TYPE_FIXED_WING;
+                    systemState->mwiAirFrametype = MAV_TYPE_FIXED_WING;
                     break;
                 case 18:
-                    mavlinkState->mwiAirFrametype = MAV_TYPE_HEXAROTOR;
+                    systemState->mwiAirFrametype = MAV_TYPE_HEXAROTOR;
                     break;
                 case 20:
-                    mavlinkState->mwiAirFrametype = MAV_TYPE_HELICOPTER;
+                    systemState->mwiAirFrametype = MAV_TYPE_HELICOPTER;
                     break;
             }
 
@@ -668,32 +667,32 @@ void callBack_mwi(int state)
             }
 
             if ((gpsHome || gpsHold) && armed)
-                mavlinkState->mwiFlightMode = MAV_MODE_AUTO_ARMED;
+                systemState->mwiFlightMode = MAV_MODE_AUTO_ARMED;
             else if ((gpsHome || gpsHold) && !armed)
-                mavlinkState->mwiFlightMode = MAV_MODE_AUTO_DISARMED;
+                systemState->mwiFlightMode = MAV_MODE_AUTO_DISARMED;
             else if (armed && !stabilize)
-                mavlinkState->mwiFlightMode = MAV_MODE_MANUAL_ARMED;
+                systemState->mwiFlightMode = MAV_MODE_MANUAL_ARMED;
 
             else if (!armed && !stabilize)
-                mavlinkState->mwiFlightMode = MAV_MODE_MANUAL_DISARMED;
+                systemState->mwiFlightMode = MAV_MODE_MANUAL_DISARMED;
 
             else if (armed && stabilize)
-                mavlinkState->mwiFlightMode = MAV_MODE_STABILIZE_ARMED;
+                systemState->mwiFlightMode = MAV_MODE_STABILIZE_ARMED;
 
             else if (!armed && stabilize)
-                mavlinkState->mwiFlightMode = MAV_MODE_STABILIZE_DISARMED;
+                systemState->mwiFlightMode = MAV_MODE_STABILIZE_DISARMED;
 
             int reportedState;
-//            if (mavlinkState->calibrating == TRUE) {
+//            if (systemState->calibrating == TRUE) {
 //                reportedState = MAV_STATE_CALIBRATING;
 //                mavMode = MAV_MODE_PREFLIGHT;
 //            } else {
             reportedState = armed ? MAV_STATE_ACTIVE : MAV_STATE_STANDBY;
 //            }
-            if (mavlinkState->sendRcData) {
-                mavlinkState->mwiFlightMode = MAV_MODE_MANUAL_ARMED;
+            if (systemState->sendRcData) {
+                systemState->mwiFlightMode = MAV_MODE_MANUAL_ARMED;
             }
-            mavlink_msg_heartbeat_pack(mavlinkState->mwiUavID, MAV_COMP_ID_ALL, &msg, mavlinkState->mwiAirFrametype, mavlinkState->mwiAutoPilotType, mavlinkState->mwiFlightMode, 0, reportedState);
+            mavlink_msg_heartbeat_pack(systemState->mwiUavID, MAV_COMP_ID_ALL, &msg, systemState->mwiAirFrametype, systemState->mwiAutoPilotType, systemState->mwiFlightMode, 0, reportedState);
             len = (char)mavlink_msg_to_send_buffer(buf, &msg);
 
             sendto(sock, (const char *)buf, (char)len, 0, (struct sockaddr*)&locGSAddr, sizeGroundStationAddr);
@@ -712,7 +711,7 @@ void callBack_mwi(int state)
             // all present sensors enabled by default except altitude and position control which we will set individually
             sensors = sensors & (~MAV_SYS_STATUS_SENSOR_Z_ALTITUDE_CONTROL & ~MAV_SYS_STATUS_SENSOR_XY_POSITION_CONTROL);
 
-            mavlink_msg_sys_status_pack(mavlinkState->mwiUavID, MAV_COMP_ID_ALL, &msg, sensors, sensors, 0, (mwiState->cycleTime / 10), mwiState->vBat * 100, mwiState->pAmp, mwiState->pMeterSum, mwiState->rssi, mwiState->i2cError, mwiState->debug[0], mwiState->debug[1],
+            mavlink_msg_sys_status_pack(systemState->mwiUavID, MAV_COMP_ID_ALL, &msg, sensors, sensors, 0, (mwiState->cycleTime / 10), mwiState->vBat * 100, mwiState->pAmp, mwiState->pMeterSum, mwiState->rssi, mwiState->i2cError, mwiState->debug[0], mwiState->debug[1],
                     mwiState->debug[2], mwiState->debug[3]);
 
             len = (char)mavlink_msg_to_send_buffer(buf, &msg);
@@ -722,7 +721,7 @@ void callBack_mwi(int state)
 
         case MSP_RAW_IMU:
             // Send raw imu
-            mavlink_msg_raw_imu_pack(mavlinkState->mwiUavID, MAV_COMP_ID_IMU, &msg, currentTime, mwiState->ax, mwiState->ay, mwiState->az, mwiState->gx, mwiState->gy, mwiState->gz, mwiState->magx, mwiState->magy, mwiState->magz);
+            mavlink_msg_raw_imu_pack(systemState->mwiUavID, MAV_COMP_ID_IMU, &msg, currentTime, mwiState->ax, mwiState->ay, mwiState->az, mwiState->gx, mwiState->gy, mwiState->gz, mwiState->magx, mwiState->magy, mwiState->magz);
             len = (char)mavlink_msg_to_send_buffer(buf, &msg);
             sendto(sock, (const char *)buf, (char)len, 0, (struct sockaddr*)&locGSAddr, sizeGroundStationAddr);
 
@@ -730,7 +729,7 @@ void callBack_mwi(int state)
 
         case MSP_SERVO:
             // Send servo - SERVO_CHAN
-            mavlink_msg_servo_output_raw_pack(mavlinkState->mwiUavID, MAV_COMP_ID_ALL, &msg, currentTime, SERVO_CHAN, mwiState->servo[0], mwiState->servo[1], mwiState->servo[2], mwiState->servo[3], mwiState->servo[4], mwiState->servo[5], mwiState->servo[6], mwiState->servo[7]);
+            mavlink_msg_servo_output_raw_pack(systemState->mwiUavID, MAV_COMP_ID_ALL, &msg, currentTime, SERVO_CHAN, mwiState->servo[0], mwiState->servo[1], mwiState->servo[2], mwiState->servo[3], mwiState->servo[4], mwiState->servo[5], mwiState->servo[6], mwiState->servo[7]);
             len = (char)mavlink_msg_to_send_buffer(buf, &msg);
             sendto(sock, (const char *)buf, (char)len, 0, (struct sockaddr*)&locGSAddr, sizeGroundStationAddr);
 
@@ -738,7 +737,7 @@ void callBack_mwi(int state)
 
         case MSP_MOTOR:
             // Send servo - MOTOR_CHAN
-            mavlink_msg_servo_output_raw_pack(mavlinkState->mwiUavID, MAV_COMP_ID_ALL, &msg, currentTime, MOTOR_CHAN, mwiState->mot[0], mwiState->mot[1], mwiState->mot[2], mwiState->mot[3], mwiState->mot[4], mwiState->mot[5], mwiState->mot[6], mwiState->mot[7]);
+            mavlink_msg_servo_output_raw_pack(systemState->mwiUavID, MAV_COMP_ID_ALL, &msg, currentTime, MOTOR_CHAN, mwiState->mot[0], mwiState->mot[1], mwiState->mot[2], mwiState->mot[3], mwiState->mot[4], mwiState->mot[5], mwiState->mot[6], mwiState->mot[7]);
             len = (char)mavlink_msg_to_send_buffer(buf, &msg);
             sendto(sock, (const char *)buf, (char)len, 0, (struct sockaddr*)&locGSAddr, sizeGroundStationAddr);
 
@@ -746,31 +745,31 @@ void callBack_mwi(int state)
 
         case MSP_RC:
             // Send rcDate
-            if (mavlinkState->fcType == FC_MWI8BIT) {
+            if (systemState->fcType == FC_MWI8BIT) {
                 mwiState->rcThrottle += mwiState->rcYaw;
                 mwiState->rcYaw = mwiState->rcThrottle -mwiState->rcYaw;
                 mwiState->rcThrottle -=   mwiState->rcYaw ;
             }
 
 
-            mavlink_msg_rc_channels_raw_pack(mavlinkState->mwiUavID, MAV_COMP_ID_ALL, &msg, currentTime / 1000, 0, mwiState->rcRoll, mwiState->rcPitch, mwiState->rcThrottle, mwiState->rcYaw, mwiState->rcAUX1, mwiState->rcAUX2, mwiState->rcAUX3, mwiState->rcAUX4,
+            mavlink_msg_rc_channels_raw_pack(systemState->mwiUavID, MAV_COMP_ID_ALL, &msg, currentTime / 1000, 0, mwiState->rcRoll, mwiState->rcPitch, mwiState->rcThrottle, mwiState->rcYaw, mwiState->rcAUX1, mwiState->rcAUX2, mwiState->rcAUX3, mwiState->rcAUX4,
                                     mwiState->rssi);
 
             len = (char)mavlink_msg_to_send_buffer(buf, &msg);
             sendto(sock, (const char *)buf, (char)len, 0, (struct sockaddr*)&locGSAddr, sizeGroundStationAddr);
 
-//            mavlink_msg_rc_channels_scaled_pack(mavlinkState->mwiUavID, MAV_COMP_ID_ALL, &msg, currentTime / 1000, 0, mwiState->rcRoll - 1500, mwiState->rcPitch - 1500, mwiState->rcThrottle - 1500, mwiState->rcYaw - 1500, mwiState->rcAUX1 - 1500,
+//            mavlink_msg_rc_channels_scaled_pack(systemState->mwiUavID, MAV_COMP_ID_ALL, &msg, currentTime / 1000, 0, mwiState->rcRoll - 1500, mwiState->rcPitch - 1500, mwiState->rcThrottle - 1500, mwiState->rcYaw - 1500, mwiState->rcAUX1 - 1500,
 //                    mwiState->rcAUX2 - 1500, mwiState->rcAUX3 - 1500, mwiState->rcAUX4 - 1500, mwiState->rssi);
 //            len = (char)mavlink_msg_to_send_buffer(buf, &msg);
 //            sendto(sock, (const char *)buf, (char)len, 0, (struct sockaddr*)&locGSAddr, sizeGroundStationAddr);
 
-            mavlink_msg_rc_channels_pack(mavlinkState->mwiUavID, MAV_COMP_ID_ALL, &msg, currentTime / 1000, 8, mwiState->rcRoll, mwiState->rcPitch, mwiState->rcThrottle, mwiState->rcYaw, mwiState->rcAUX1, mwiState->rcAUX2, mwiState->rcAUX3, mwiState->rcAUX4, 0, 0, 0, 0, 0, 0, 0,
+            mavlink_msg_rc_channels_pack(systemState->mwiUavID, MAV_COMP_ID_ALL, &msg, currentTime / 1000, 8, mwiState->rcRoll, mwiState->rcPitch, mwiState->rcThrottle, mwiState->rcYaw, mwiState->rcAUX1, mwiState->rcAUX2, mwiState->rcAUX3, mwiState->rcAUX4, 0, 0, 0, 0, 0, 0, 0,
                     0, 0, 0, mwiState->rssi);
             len = (char)mavlink_msg_to_send_buffer(buf, &msg);
             sendto(sock, (const char *)buf, (char)len, 0, (struct sockaddr*)&locGSAddr, sizeGroundStationAddr);
 
             // Send update hud
-            mavlink_msg_vfr_hud_pack(mavlinkState->mwiUavID, MAV_COMP_ID_ALL, &msg, 0, 0, mwiState->head, (mwiState->rcThrottle - 1000) / 10, FLOAT_TO_INT(mwiState->baro / 100.0f), FLOAT_TO_INT(mwiState->vario / 100.0f));
+            mavlink_msg_vfr_hud_pack(systemState->mwiUavID, MAV_COMP_ID_ALL, &msg, 0, 0, mwiState->head, (mwiState->rcThrottle - 1000) / 10, FLOAT_TO_INT(mwiState->baro / 100.0f), FLOAT_TO_INT(mwiState->vario / 100.0f));
             len = (char)mavlink_msg_to_send_buffer(buf, &msg);
             sendto(sock, (const char *)buf, (char)len, 0, (struct sockaddr*)&locGSAddr, sizeGroundStationAddr);
 
@@ -778,11 +777,11 @@ void callBack_mwi(int state)
 
         case MSP_RAW_GPS:
             // Send gps
-            mavlink_msg_gps_raw_int_pack(mavlinkState->mwiUavID, MAV_COMP_ID_GPS, &msg, currentTime, mwiState->GPS_fix + 1, mwiState->GPS_latitude, mwiState->GPS_longitude, FLOAT_TO_INT(mwiState->GPS_altitude * 100.0f), 0, 0, mwiState->GPS_speed, 0, mwiState->GPS_numSat);
+            mavlink_msg_gps_raw_int_pack(systemState->mwiUavID, MAV_COMP_ID_GPS, &msg, currentTime, mwiState->GPS_fix + 1, mwiState->GPS_latitude, mwiState->GPS_longitude, FLOAT_TO_INT(mwiState->GPS_altitude * 100.0f), 0, 0, mwiState->GPS_speed, 0, mwiState->GPS_numSat);
             len = (char)mavlink_msg_to_send_buffer(buf, &msg);
             sendto(sock, (const char *)buf, (char)len, 0, (struct sockaddr*)&locGSAddr, sizeGroundStationAddr);
 
-            mavlink_msg_global_position_int_pack(mavlinkState->mwiUavID, MAV_COMP_ID_GPS, &msg, currentTime / 1000, mwiState->GPS_latitude, mwiState->GPS_longitude, FLOAT_TO_INT(mwiState->GPS_altitude * 100.0f), FLOAT_TO_INT(mwiState->baro * 1000.0f), 0, 0, 0, 0);
+            mavlink_msg_global_position_int_pack(systemState->mwiUavID, MAV_COMP_ID_GPS, &msg, currentTime / 1000, mwiState->GPS_latitude, mwiState->GPS_longitude, FLOAT_TO_INT(mwiState->GPS_altitude * 100.0f), FLOAT_TO_INT(mwiState->baro * 1000.0f), 0, 0, 0, 0);
             len = (char)mavlink_msg_to_send_buffer(buf, &msg);
             sendto(sock, (const char *)buf, (char)len, 0, (struct sockaddr*)&locGSAddr, sizeGroundStationAddr);
 
@@ -793,13 +792,13 @@ void callBack_mwi(int state)
 
         case MSP_ATTITUDE:
             // Send attitude
-            mavlink_msg_attitude_pack(mavlinkState->mwiUavID, MAV_COMP_ID_IMU, &msg, currentTime / 1000, deg2radian(FLOAT_TO_INT(mwiState->angx)), -deg2radian(FLOAT_TO_INT(mwiState->angy)), deg2radian(mwiState->head), deg2radian(mwiState->gx), deg2radian(mwiState->gy),
+            mavlink_msg_attitude_pack(systemState->mwiUavID, MAV_COMP_ID_IMU, &msg, currentTime / 1000, deg2radian(FLOAT_TO_INT(mwiState->angx)), -deg2radian(FLOAT_TO_INT(mwiState->angy)), deg2radian(mwiState->head), deg2radian(mwiState->gx), deg2radian(mwiState->gy),
                     deg2radian(mwiState->gz));
             len = (char)mavlink_msg_to_send_buffer(buf, &msg);
             sendto(sock, (const char *)buf, (char)len, 0, (struct sockaddr*)&locGSAddr, sizeGroundStationAddr);
 
             // Send Local Position - unused without other sensors or gps cord
-            //mavlink_msg_local_position_ned_pack(mavlinkState->mwiUavID, 200, &msg, currentTime, 0, 0, 0, 0, 0, 0);
+            //mavlink_msg_local_position_ned_pack(systemState->mwiUavID, 200, &msg, currentTime, 0, 0, 0, 0, 0, 0);
             //len = (char)mavlink_msg_to_send_buffer(buf, &msg);
             //sendto(sock, (const char *)buf, len, 0, (struct sockaddr*)&locGSAddr, sizeGroundStationAddr);
             break;
@@ -833,7 +832,7 @@ void callBack_mwi(int state)
 
         case MSP_DEBUG:
             // Send extra debug values (uint32_t time_boot_ms)
-            mavlink_msg_debug_pack(mavlinkState->mwiUavID, MAV_COMP_ID_ALL, &msg, (uint32_t)(currentTime / 1000), 1, mwiState->serialErrorsCount);
+            mavlink_msg_debug_pack(systemState->mwiUavID, MAV_COMP_ID_ALL, &msg, (uint32_t)(currentTime / 1000), 1, mwiState->serialErrorsCount);
             len = (char)mavlink_msg_to_send_buffer(buf, &msg);
             sendto(sock, (const char *)buf, len, 0, (struct sockaddr*)&locGSAddr, sizeGroundStationAddr);
             break;
@@ -853,7 +852,7 @@ void callBack_mwi(int state)
 
 void sendMavParam(float value, const char *name, int index, int indexMax)
 {
-    mavlink_msg_param_value_pack(mavlinkState->mwiUavID, MAV_COMP_ID_ALL, &msg, name, value, MAV_PARAM_TYPE_REAL32, indexMax, index);
+    mavlink_msg_param_value_pack(systemState->mwiUavID, MAV_COMP_ID_ALL, &msg, name, value, MAV_PARAM_TYPE_REAL32, indexMax, index);
     sendto(sock, (const char *)buf, (char)mavlink_msg_to_send_buffer(buf, &msg), 0, (struct sockaddr*)&locGSAddr, sizeGroundStationAddr);
 }
 
@@ -978,7 +977,7 @@ void handleMessage(mavlink_message_t* currentMsg)
         case MAVLINK_MSG_ID_PARAM_REQUEST_READ: {
             mavlink_param_request_read_t packet;
             mavlink_msg_param_request_read_decode(currentMsg, &packet);
-            if (mavlinkState->verbose) {
+            if (systemState->verbose) {
                 printf("request param = %d , id = %s\n", (packet.param_index), (packet.param_id));
             }
 
@@ -987,21 +986,21 @@ void handleMessage(mavlink_message_t* currentMsg)
 
         case MAVLINK_MSG_ID_MANUAL_CONTROL:
 
-            if (mavlinkState->sendRcData) {
+            if (systemState->sendRcData) {
                 mavlink_manual_control_t packet;
                 mavlink_msg_manual_control_decode(currentMsg, &packet);
 
-                mavlinkState->rcdata.x = 1500 - packet.x / 2;
-                mavlinkState->rcdata.y = 1500 + packet.y / 2;
-                mavlinkState->rcdata.r = 1500 + packet.r / 2;
-                if (mavlinkState->throttleHalfRange) {
-                    mavlinkState->rcdata.z = 1000 + packet.z;
+                systemState->rcdata.x = 1500 - packet.x / 2;
+                systemState->rcdata.y = 1500 + packet.y / 2;
+                systemState->rcdata.r = 1500 + packet.r / 2;
+                if (systemState->throttleHalfRange) {
+                    systemState->rcdata.z = 1000 + packet.z;
                 } else {
-                    mavlinkState->rcdata.z = 1500 + packet.z / 2;
+                    systemState->rcdata.z = 1500 + packet.z / 2;
                 }
 
-                mavlinkState->rcdata.buttons = packet.buttons;
-                mavlinkState->rcdata.toSend = OK;
+                systemState->rcdata.buttons = packet.buttons;
+                systemState->rcdata.toSend = OK;
 
             }
             break;
@@ -1009,7 +1008,7 @@ void handleMessage(mavlink_message_t* currentMsg)
         case MAVLINK_MSG_ID_COMMAND_LONG: {
             mavlink_command_long_t packet;
             mavlink_msg_command_long_decode(currentMsg, &packet);
-            if (mavlinkState->verbose) {
+            if (systemState->verbose) {
                 printf("cmd %i\t param %i %i %i %i %i %i %i \t target %i %i \tack %u\n", (int)packet.command, (int)packet.param1, (int)packet.param2, (int)packet.param3, (int)packet.param4, (int)packet.param5, (int)packet.param6, (int)packet.param7, (int)packet.target_system,
                         (int)packet.target_component, packet.confirmation);
             }
@@ -1050,7 +1049,7 @@ void handleMessage(mavlink_message_t* currentMsg)
             //                    ((AP_Int8 *)vp)->set(packet.param_value);
             //                }
             //            }
-            if (mavlinkState->verbose) {
+            if (systemState->verbose) {
                 printf("key = %s, value = %g\n", key, packet.param_value);
             }
             //            // Report back new value
